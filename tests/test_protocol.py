@@ -126,6 +126,50 @@ def test_save_load_roundtrip():
     Path(f.name).unlink(missing_ok=True)
 
 
+def test_save_load_preserves_full_text():
+    """Regression test: text must survive roundtrip without truncation."""
+    long_text = "This is a test sentence. " * 100  # ~2500 chars
+    proto = ManuscriptProtocol.from_text(long_text)
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".json", delete=False, mode="w", encoding="utf-8"
+    ) as f:
+        proto.save(f.name)
+        loaded = ManuscriptProtocol.load(f.name)
+
+    assert loaded.text == long_text, "Text was truncated during save/load!"
+    assert "..." not in loaded.text
+    Path(f.name).unlink(missing_ok=True)
+
+
+def test_load_ignores_unknown_fields():
+    """Protocol should not crash when loading JSON with extra fields."""
+    proto = ManuscriptProtocol.from_text("Test.")
+    proto.style_flags.append(StyleFlag(
+        checker="test", severity="info", line=1, message="test",
+    ))
+    proto.evolved_sentences.append(EvolvedSentence(
+        original="A", evolved="B",
+    ))
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".json", delete=False, mode="w", encoding="utf-8"
+    ) as f:
+        proto.save(f.name)
+        # Inject unknown fields into the saved JSON
+        data = json.loads(Path(f.name).read_text(encoding="utf-8"))
+        data["style_flags"][0]["new_future_field"] = "value"
+        data["evolved_sentences"][0]["another_new_field"] = 42
+        Path(f.name).write_text(json.dumps(data), encoding="utf-8")
+
+        # Should load without crashing
+        loaded = ManuscriptProtocol.load(f.name)
+
+    assert len(loaded.style_flags) == 1
+    assert len(loaded.evolved_sentences) == 1
+    Path(f.name).unlink(missing_ok=True)
+
+
 def test_summary():
     proto = ManuscriptProtocol.from_text("Test.", source="paper.qmd")
     proto.ai_score = 22.0
@@ -146,6 +190,8 @@ def run_all():
         test_accept_all,
         test_get_flagged_sentences,
         test_save_load_roundtrip,
+        test_save_load_preserves_full_text,
+        test_load_ignores_unknown_fields,
         test_summary,
     ]
 

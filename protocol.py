@@ -198,10 +198,12 @@ class ManuscriptProtocol:
             pipeline_version=data.get("pipeline_version", PROTOCOL_VERSION),
             stages_completed=data.get("stages_completed", []),
         )
+        flag_fields = {name for name in StyleFlag.__dataclass_fields__}
         for f in data.get("style_flags", []):
-            proto.style_flags.append(StyleFlag(**f))
+            proto.style_flags.append(StyleFlag(**{k: v for k, v in f.items() if k in flag_fields}))
+        es_fields = {name for name in EvolvedSentence.__dataclass_fields__}
         for e in data.get("evolved_sentences", []):
-            proto.evolved_sentences.append(EvolvedSentence(**e))
+            proto.evolved_sentences.append(EvolvedSentence(**{k: v for k, v in e.items() if k in es_fields}))
         proto.evolution_metadata = data.get("evolution_metadata", {})
         return proto
 
@@ -210,7 +212,7 @@ class ManuscriptProtocol:
             "source_path": self.source_path,
             "source_hash": self.source_hash,
             "created_at": self.created_at,
-            "text": self.text[:500] + "..." if len(self.text) > 500 else self.text,
+            "text": self.text,
             "yaml_frontmatter": self.yaml_frontmatter,
             "ai_score": self.ai_score,
             "ai_label": self.ai_label,

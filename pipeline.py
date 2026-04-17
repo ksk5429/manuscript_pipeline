@@ -67,6 +67,7 @@ def _run_checker(
     qmd_path: Path,
     checker_path: Path,
     threshold: float | None = None,
+    checkers: str | None = None,
 ) -> dict:
     """Run ai_style_checker and return JSON output."""
     cmd = [
@@ -77,6 +78,8 @@ def _run_checker(
     ]
     if threshold is not None:
         cmd.extend(["--threshold", str(threshold)])
+    if checkers:
+        cmd.extend(["--checkers", checkers])
 
     result = subprocess.run(
         cmd,
@@ -84,17 +87,19 @@ def _run_checker(
         text=True,
         cwd=str(checker_path),
         env={**os.environ, "PYTHONUTF8": "1"},
+        timeout=120,
     )
 
-    if result.returncode != 0 and threshold is not None:
-        print(f"  [GATE] AI score exceeded threshold {threshold}", file=sys.stderr)
+    if result.returncode != 0:
+        print(f"  [WARN] Checker exited with code {result.returncode}", file=sys.stderr)
+        if result.stderr:
+            print(f"  stderr: {result.stderr[:300]}", file=sys.stderr)
 
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError:
         print(f"  [ERROR] Checker output not valid JSON", file=sys.stderr)
         print(f"  stdout: {result.stdout[:200]}", file=sys.stderr)
-        print(f"  stderr: {result.stderr[:200]}", file=sys.stderr)
         return {}
 
 
@@ -278,6 +283,9 @@ def main() -> None:
     if args.resume:
         proto = ManuscriptProtocol.load(args.resume)
         qmd_path = Path(proto.source_path)
+        if not qmd_path.exists():
+            print(f"Source file no longer exists: {proto.source_path}", file=sys.stderr)
+            sys.exit(1)
         print(f"Resumed protocol: {proto.summary()}")
     elif args.input:
         qmd_path = Path(args.input)
@@ -305,7 +313,7 @@ def main() -> None:
         print(f"  STAGE 1: AI Style Check")
         print(f"{'='*60}")
 
-        checker_output = _run_checker(qmd_path, checker_path, args.threshold)
+        checker_output = _run_checker(qmd_path, checker_path, args.threshold, args.checkers)
         if checker_output:
             proto.add_style_check(checker_output)
             ai_score = proto.ai_score
